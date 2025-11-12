@@ -1,11 +1,13 @@
+import { Suspense } from 'react'
 import { Metadata } from 'next'
 import Image from 'next/image'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getArticleBySlug, getLatestArticles } from '@/lib/cache/queries'
+import { getArticleBySlug } from '@/lib/cache/queries'
 import { supabase } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils'
-import { ArticleGrid } from '@/components/article/article-grid'
+import { RelatedArticles } from '@/components/article/related-articles'
+import { RelatedArticlesSkeleton } from '@/components/article/related-articles-skeleton'
 import { Calendar, User, Eye, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -84,23 +86,15 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
     notFound()
   }
 
-  // Increment view count (fire and forget)
+  // Increment view count (fire and forget, with error handling)
   supabase
     .from('articles')
     // @ts-ignore - Supabase types need regeneration
     .update({ view_count: (article.view_count || 0) + 1 })
     .eq('id', article.id)
-    .then()
-
-  // Get related articles from the same category
-  const { data: relatedArticles } = await supabase
-    .from('articles')
-    .select('*, author:users(*), category:categories(*)')
-    .eq('category_id', article.category_id)
-    .eq('status', 'published')
-    .neq('id', article.id)
-    .order('published_at', { ascending: false })
-    .limit(3)
+    .then(() => {}, (error) => {
+      console.error('Failed to update view count:', error)
+    })
 
   return (
     <article className="container py-8">
@@ -204,12 +198,9 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
       </div>
 
       {/* Related articles */}
-      {relatedArticles && relatedArticles.length > 0 && (
-        <section className="mt-16">
-          <h2 className="mb-6 text-2xl font-bold">Свързани статии</h2>
-          <ArticleGrid articles={relatedArticles} columns={3} />
-        </section>
-      )}
+      <Suspense fallback={<RelatedArticlesSkeleton />}>
+        <RelatedArticles categoryId={article.category_id} currentArticleId={article.id} />
+      </Suspense>
     </article>
   )
 }

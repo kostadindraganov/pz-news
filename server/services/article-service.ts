@@ -275,8 +275,8 @@ export async function getArticleBySlug(slug: string) {
     await supabaseAdmin
       .from('articles')
       // @ts-ignore - Supabase types need regeneration
-      .update({ view_count: (data.view_count || 0) + 1 })
-      .eq('id', data.id)
+      .update({ view_count: ((data as any).view_count || 0) + 1 })
+      .eq('id', (data as any).id)
 
     return { success: true, data }
   } catch (error) {
