@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { unstable_cache } from 'next/cache'
 import { supabase } from '@/lib/supabase/client'
+import type { Article, Category } from '@/types/article'
 
 /**
  * React Cache - Deduplicates database queries within a single request
@@ -8,45 +9,45 @@ import { supabase } from '@/lib/supabase/client'
  */
 
 // Get article by ID with React cache
-export const getArticleById = cache(async (id: string) => {
+export const getArticleById = cache(async (id: string): Promise<Article> => {
   const { data, error } = await supabase
     .from('articles')
-    .select('*, author:users(*), category:categories(*)')
+    .select('*, author:users(*), category:categories(*), featured_image:media(*)')
     .eq('id', id)
     .single()
 
   if (error) throw error
-  return data
+  return data as Article
 })
 
 // Get article by slug with React cache
-export const getArticleBySlug = cache(async (slug: string) => {
+export const getArticleBySlug = cache(async (slug: string): Promise<Article> => {
   const { data, error } = await supabase
     .from('articles')
-    .select('*, author:users(*), category:categories(*)')
+    .select('*, author:users(*), category:categories(*), featured_image:media(*)')
     .eq('slug', slug)
     .eq('status', 'published')
     .single()
 
   if (error) throw error
-  return data
+  return data as Article
 })
 
 // Get category by slug with React cache
-export const getCategoryBySlug = cache(async (slug: string) => {
+export const getCategoryBySlug = cache(async (slug: string): Promise<Category> => {
   const { data, error } = await supabase
     .from('categories')
-    .select('*')
+    .select('*, parent:categories(id, name_bg, slug)')
     .eq('slug', slug)
     .eq('is_active', true)
     .single()
 
   if (error) throw error
-  return data
+  return data as Category
 })
 
 // Get all categories with React cache
-export const getAllCategories = cache(async () => {
+export const getAllCategories = cache(async (): Promise<Category[]> => {
   const { data, error } = await supabase
     .from('categories')
     .select('*')
@@ -54,7 +55,7 @@ export const getAllCategories = cache(async () => {
     .order('display_order', { ascending: true })
 
   if (error) throw error
-  return data
+  return data as Category[]
 })
 
 /**
@@ -64,16 +65,16 @@ export const getAllCategories = cache(async () => {
 
 // Get trending articles (cached for 2 minutes)
 export const getTrendingArticles = unstable_cache(
-  async (limit: number = 10) => {
+  async (limit: number = 10): Promise<Article[]> => {
     const { data, error } = await supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*)')
+      .select('*, author:users(*), category:categories(*), featured_image:media(*)')
       .eq('status', 'published')
       .order('view_count', { ascending: false })
       .limit(limit)
 
     if (error) throw error
-    return data
+    return data as Article[]
   },
   ['trending-articles'],
   {
@@ -84,17 +85,17 @@ export const getTrendingArticles = unstable_cache(
 
 // Get featured articles (cached for 30 seconds)
 export const getFeaturedArticles = unstable_cache(
-  async (limit: number = 5) => {
+  async (limit: number = 5): Promise<Article[]> => {
     const { data, error } = await supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*)')
+      .select('*, author:users(*), category:categories(*), featured_image:media(*)')
       .eq('status', 'published')
       .eq('is_featured', true)
       .order('published_at', { ascending: false })
       .limit(limit)
 
     if (error) throw error
-    return data
+    return data as Article[]
   },
   ['featured-articles'],
   {
@@ -105,16 +106,16 @@ export const getFeaturedArticles = unstable_cache(
 
 // Get latest articles (cached for 30 seconds)
 export const getLatestArticles = unstable_cache(
-  async (limit: number = 10) => {
-    const { data, error } = await supabase
+  async (limit: number = 10): Promise<Article[]> => {
+    const { data, error} = await supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*)')
+      .select('*, author:users(*), category:categories(*), featured_image:media(*)')
       .eq('status', 'published')
       .order('published_at', { ascending: false })
       .limit(limit)
 
     if (error) throw error
-    return data
+    return data as Article[]
   },
   ['latest-articles'],
   {
@@ -125,17 +126,17 @@ export const getLatestArticles = unstable_cache(
 
 // Get articles by category (cached for 5 minutes)
 export const getArticlesByCategory = unstable_cache(
-  async (categoryId: string, limit: number = 20, offset: number = 0) => {
+  async (categoryId: string, limit: number = 20, offset: number = 0): Promise<{ articles: Article[], total: number }> => {
     const { data, error, count } = await supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*)', { count: 'exact' })
+      .select('*, author:users(*), category:categories(*), featured_image:media(*)', { count: 'exact' })
       .eq('category_id', categoryId)
       .eq('status', 'published')
       .order('published_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
     if (error) throw error
-    return { articles: data, total: count || 0 }
+    return { articles: data as Article[], total: count || 0 }
   },
   ['articles-by-category'],
   {
@@ -165,17 +166,17 @@ export const getCategoryArticleCount = unstable_cache(
 
 // Get breaking news (cached for 1 minute)
 export const getBreakingNews = unstable_cache(
-  async (limit: number = 3) => {
+  async (limit: number = 3): Promise<Article[]> => {
     const { data, error } = await supabase
       .from('articles')
-      .select('*, author:users(*), category:categories(*)')
+      .select('*, author:users(*), category:categories(*), featured_image:media(*)')
       .eq('status', 'published')
       .eq('is_breaking', true)
       .order('published_at', { ascending: false })
       .limit(limit)
 
     if (error) throw error
-    return data
+    return data as Article[]
   },
   ['breaking-news'],
   {
@@ -195,10 +196,12 @@ export const getArticlesByTag = unstable_cache(
 
     if (tagError) throw tagError
 
+    const tagData = tag as any
+
     const { data, error } = await supabase
       .from('article_tags')
       .select('article:articles(*, author:users(*), category:categories(*))')
-      .eq('tag_id', tag.id)
+      .eq('tag_id', tagData.id)
       .limit(limit)
 
     if (error) throw error

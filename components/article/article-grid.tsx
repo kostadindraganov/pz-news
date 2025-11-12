@@ -9,7 +9,7 @@ interface Article {
   featured_image_url?: string | null
   featured_image_alt?: string | null
   published_at?: string | null
-  view_count: number
+  view_count?: number | null
   author?: {
     full_name: string
   } | null

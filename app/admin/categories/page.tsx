@@ -10,9 +10,11 @@ export default async function CategoriesPage() {
     .select('*, parent:categories(name_bg)')
     .order('display_order', { ascending: true })
 
+  const categoriesList = (categories as any[]) || []
+
   // Separate main categories and subcategories
-  const mainCategories = categories?.filter((cat) => !cat.parent_id) || []
-  const subcategories = categories?.filter((cat) => cat.parent_id) || []
+  const mainCategories = categoriesList.filter((cat: any) => !cat.parent_id)
+  const subcategories = categoriesList.filter((cat: any) => cat.parent_id)
 
   return (
     <div className="space-y-6">
@@ -139,7 +141,7 @@ export default async function CategoriesPage() {
             <CardTitle className="text-sm font-medium">Total Categories</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">{categories?.length || 0}</div>
+            <div className="text-3xl font-bold">{categoriesList.length}</div>
             <p className="text-xs text-muted-foreground">
               {mainCategories.length} main, {subcategories.length} subcategories
             </p>
@@ -152,7 +154,7 @@ export default async function CategoriesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              {categories?.filter((cat) => cat.is_active).length || 0}
+              {categoriesList.filter((cat: any) => cat.is_active).length}
             </div>
             <p className="text-xs text-muted-foreground">Currently visible</p>
           </CardContent>
@@ -164,7 +166,7 @@ export default async function CategoriesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              {categories?.filter((cat) => !cat.is_active).length || 0}
+              {categoriesList.filter((cat: any) => !cat.is_active).length}
             </div>
             <p className="text-xs text-muted-foreground">Hidden from public</p>
           </CardContent>

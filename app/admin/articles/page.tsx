@@ -28,6 +28,7 @@ export default async function ArticlesPage({
   }
 
   const { data: articles, count } = await query
+  const articlesList = articles as any[] || []
 
   const totalPages = Math.ceil((count || 0) / limit)
 
@@ -113,9 +114,9 @@ export default async function ArticlesPage({
           <CardTitle>Articles List</CardTitle>
         </CardHeader>
         <CardContent>
-          {articles && articles.length > 0 ? (
+          {articlesList.length > 0 ? (
             <div className="space-y-4">
-              {articles.map((article) => (
+              {articlesList.map((article: any) => (
                 <div
                   key={article.id}
                   className="flex items-center justify-between border-b pb-4 last:border-0"
@@ -131,7 +132,7 @@ export default async function ArticlesPage({
                       <span>•</span>
                       <span className="flex items-center gap-1">
                         <Eye className="h-3 w-3" />
-                        {article.view_count}
+                        {article.view_count || 0}
                       </span>
                     </div>
                   </div>

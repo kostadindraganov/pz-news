@@ -4,9 +4,6 @@ import { getCategoryBySlug, getAllCategories } from '@/lib/cache/queries'
 import { supabase } from '@/lib/supabase/client'
 import { ArticleGrid } from '@/components/article/article-grid'
 
-// Revalidate category pages every 5 minutes
-export const revalidate = 300
-
 // Generate static params for all categories at build time
 export async function generateStaticParams() {
   const categories = await getAllCategories()
@@ -17,18 +14,19 @@ export async function generateStaticParams() {
 }
 
 interface CategoryPageProps {
-  params: {
+  params: Promise<{
     category: string
-  }
-  searchParams: {
+  }>
+  searchParams: Promise<{
     page?: string
-  }
+  }>
 }
 
 // Generate metadata for SEO
 export async function generateMetadata({ params }: CategoryPageProps): Promise<Metadata> {
   try {
-    const category = await getCategoryBySlug(params.category)
+    const { category: categorySlug } = await params
+    const category = await getCategoryBySlug(categorySlug)
 
     return {
       title: `${category.name_bg} - Новини`,
@@ -47,14 +45,17 @@ export async function generateMetadata({ params }: CategoryPageProps): Promise<M
 }
 
 export default async function CategoryPage({ params, searchParams }: CategoryPageProps) {
+  const { category: categorySlug } = await params
+  const resolvedSearchParams = await searchParams
+
   let category
   try {
-    category = await getCategoryBySlug(params.category)
+    category = await getCategoryBySlug(categorySlug)
   } catch (error) {
     notFound()
   }
 
-  const page = parseInt(searchParams.page || '1', 10)
+  const page = parseInt(resolvedSearchParams.page || '1', 10)
   const limit = 12
   const offset = (page - 1) * limit
 
@@ -77,6 +78,8 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
     .eq('is_active', true)
     .order('display_order', { ascending: true })
 
+  const subcategoryList = subcategories.data as any[] || []
+
   return (
     <div className="container py-8">
       {/* Category header */}
@@ -88,12 +91,12 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
       </div>
 
       {/* Subcategories navigation */}
-      {subcategories.data && subcategories.data.length > 0 && (
+      {subcategoryList.length > 0 && (
         <nav className="mb-8 flex flex-wrap gap-2">
-          {subcategories.data.map((subcategory) => (
+          {subcategoryList.map((subcategory: any) => (
             <a
               key={subcategory.id}
-              href={`/${params.category}/${subcategory.slug}`}
+              href={`/${categorySlug}/${subcategory.slug}`}
               className="rounded-full border px-4 py-2 text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
             >
               {subcategory.name_bg}
@@ -112,7 +115,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
             <div className="mt-12 flex justify-center gap-2">
               {page > 1 && (
                 <a
-                  href={`/${params.category}?page=${page - 1}`}
+                  href={`/${categorySlug}?page=${page - 1}`}
                   className="rounded border px-4 py-2 transition-colors hover:bg-muted"
                 >
                   Предишна
@@ -123,7 +126,7 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
               </span>
               {page < totalPages && (
                 <a
-                  href={`/${params.category}?page=${page + 1}`}
+                  href={`/${categorySlug}?page=${page + 1}`}
                   className="rounded border px-4 py-2 transition-colors hover:bg-muted"
                 >
                   Следваща

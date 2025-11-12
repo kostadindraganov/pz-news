@@ -11,10 +11,12 @@ export default async function UsersPage() {
     .select('*')
     .order('created_at', { ascending: false })
 
+  const usersList = (users as any[]) || []
+
   // Get counts by role
-  const adminCount = users?.filter((u) => u.role === 'admin').length || 0
-  const editorCount = users?.filter((u) => u.role === 'editor').length || 0
-  const authorCount = users?.filter((u) => u.role === 'author').length || 0
+  const adminCount = usersList.filter((u: any) => u.role === 'admin').length
+  const editorCount = usersList.filter((u: any) => u.role === 'editor').length
+  const authorCount = usersList.filter((u: any) => u.role === 'author').length
 
   return (
     <div className="space-y-6">
@@ -38,7 +40,7 @@ export default async function UsersPage() {
             <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{users?.length || 0}</div>
+            <div className="text-2xl font-bold">{usersList.length}</div>
             <p className="text-xs text-muted-foreground">Registered accounts</p>
           </CardContent>
         </Card>
@@ -83,9 +85,9 @@ export default async function UsersPage() {
           <CardTitle>All Users</CardTitle>
         </CardHeader>
         <CardContent>
-          {users && users.length > 0 ? (
+          {usersList.length > 0 ? (
             <div className="space-y-4">
-              {users.map((user) => (
+              {usersList.map((user: any) => (
                 <div
                   key={user.id}
                   className="flex items-center justify-between rounded-lg border p-4"

@@ -91,7 +91,7 @@ export default function NewArticlePage() {
 
       const data = await response.json()
       setSelectedImage(data.media)
-      setValue('featuredImageId', data.media.id)
+      setValue('featuredImageUrl', data.media.public_url)
       toast.success('Image uploaded successfully')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to upload image')
@@ -102,7 +102,7 @@ export default function NewArticlePage() {
 
   const removeImage = () => {
     setSelectedImage(null)
-    setValue('featuredImageId', undefined)
+    setValue('featuredImageUrl', undefined)
   }
 
   const onSubmit = async (data: ArticleFormData) => {

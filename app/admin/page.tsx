@@ -31,7 +31,7 @@ export default async function AdminDashboard() {
     ).count || 0
 
   const totalViews =
-    viewsResult.data?.reduce((sum, article) => sum + (article.view_count || 0), 0) || 0
+    (viewsResult.data as any[])?.reduce((sum, article) => sum + (article.view_count || 0), 0) || 0
   const totalUsers = usersResult.count || 0
   const totalCategories = categoriesResult.count || 0
 
@@ -41,6 +41,8 @@ export default async function AdminDashboard() {
     .select('id, title, status, created_at, author:users(full_name)')
     .order('created_at', { ascending: false })
     .limit(5)
+
+  const recentArticlesList = (recentArticles as any[]) || []
 
   const stats = [
     {
@@ -103,9 +105,9 @@ export default async function AdminDashboard() {
           <CardTitle>Recent Articles</CardTitle>
         </CardHeader>
         <CardContent>
-          {recentArticles && recentArticles.length > 0 ? (
+          {recentArticlesList.length > 0 ? (
             <div className="space-y-4">
-              {recentArticles.map((article) => (
+              {recentArticlesList.map((article: any) => (
                 <div
                   key={article.id}
                   className="flex items-center justify-between border-b pb-4 last:border-0"

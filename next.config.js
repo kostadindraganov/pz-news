@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Enable Cache Components (includes PPR)
+  cacheComponents: true,
+
   experimental: {
     // Enable Partial Prerendering for mixing static and dynamic content
     cacheComponents: true,
@@ -7,6 +10,8 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
+    // Use system TLS certificates for Google Fonts
+    turbopackUseSystemTlsCerts: true,
   },
 
   // Image configuration for Cloudflare R2

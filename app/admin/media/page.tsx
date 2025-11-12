@@ -11,6 +11,8 @@ export default async function MediaPage() {
     .select('*, uploader:users(full_name)')
     .order('created_at', { ascending: false })
 
+  const mediaList = (media as any[]) || []
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -48,12 +50,12 @@ export default async function MediaPage() {
       {/* Media Grid */}
       <Card>
         <CardHeader>
-          <CardTitle>All Media ({media?.length || 0})</CardTitle>
+          <CardTitle>All Media ({mediaList.length})</CardTitle>
         </CardHeader>
         <CardContent>
-          {media && media.length > 0 ? (
+          {mediaList.length > 0 ? (
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-              {media.map((item) => (
+              {mediaList.map((item: any) => (
                 <div key={item.id} className="group relative overflow-hidden rounded-lg border">
                   <div className="relative aspect-square">
                     <Image
