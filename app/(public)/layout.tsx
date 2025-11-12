@@ -1,5 +1,8 @@
+import { Suspense } from 'react'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
+import { HeaderSkeleton } from '@/components/layout/header-skeleton'
+import { FooterSkeleton } from '@/components/layout/footer-skeleton'
 
 export default function PublicLayout({
   children,
@@ -8,9 +11,13 @@ export default function PublicLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <Header />
+      <Suspense fallback={<HeaderSkeleton />}>
+        <Header />
+      </Suspense>
       <main className="flex-1">{children}</main>
-      <Footer />
+      <Suspense fallback={<FooterSkeleton />}>
+        <Footer />
+      </Suspense>
     </div>
   )
 }
