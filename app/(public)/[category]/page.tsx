@@ -1,8 +1,10 @@
+import { Suspense } from 'react'
 import { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { getCategoryBySlug, getAllCategories } from '@/lib/cache/queries'
-import { supabase } from '@/lib/supabase/client'
-import { ArticleGrid } from '@/components/article/article-grid'
+import { CategoryArticles } from '@/components/category/category-articles'
+import { CategorySubcategories } from '@/components/category/category-subcategories'
+import { CategoryArticlesSkeleton, CategorySubcategoriesSkeleton } from '@/components/category/category-skeleton'
 
 // Generate static params for all categories at build time
 export async function generateStaticParams() {
@@ -56,29 +58,6 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
   }
 
   const page = parseInt(resolvedSearchParams.page || '1', 10)
-  const limit = 12
-  const offset = (page - 1) * limit
-
-  // Get articles for this category
-  const { data: articles, count } = await supabase
-    .from('articles')
-    .select('*, author:users(*), category:categories(*)', { count: 'exact' })
-    .eq('category_id', category.id)
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    .range(offset, offset + limit - 1)
-
-  const totalPages = Math.ceil((count || 0) / limit)
-
-  // Get subcategories if this is a parent category
-  const subcategories = await supabase
-    .from('categories')
-    .select('*')
-    .eq('parent_id', category.id)
-    .eq('is_active', true)
-    .order('display_order', { ascending: true })
-
-  const subcategoryList = subcategories.data as any[] || []
 
   return (
     <div className="container py-8">
@@ -91,57 +70,14 @@ export default async function CategoryPage({ params, searchParams }: CategoryPag
       </div>
 
       {/* Subcategories navigation */}
-      {subcategoryList.length > 0 && (
-        <nav className="mb-8 flex flex-wrap gap-2">
-          {subcategoryList.map((subcategory: any) => (
-            <a
-              key={subcategory.id}
-              href={`/${categorySlug}/${subcategory.slug}`}
-              className="rounded-full border px-4 py-2 text-sm transition-colors hover:bg-primary hover:text-primary-foreground"
-            >
-              {subcategory.name_bg}
-            </a>
-          ))}
-        </nav>
-      )}
+      <Suspense fallback={<CategorySubcategoriesSkeleton />}>
+        <CategorySubcategories categoryId={category.id} categorySlug={categorySlug} />
+      </Suspense>
 
       {/* Articles grid */}
-      {articles && articles.length > 0 ? (
-        <>
-          <ArticleGrid articles={articles} columns={3} />
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="mt-12 flex justify-center gap-2">
-              {page > 1 && (
-                <a
-                  href={`/${categorySlug}?page=${page - 1}`}
-                  className="rounded border px-4 py-2 transition-colors hover:bg-muted"
-                >
-                  Предишна
-                </a>
-              )}
-              <span className="flex items-center px-4 py-2 text-sm text-muted-foreground">
-                Страница {page} от {totalPages}
-              </span>
-              {page < totalPages && (
-                <a
-                  href={`/${categorySlug}?page=${page + 1}`}
-                  className="rounded border px-4 py-2 transition-colors hover:bg-muted"
-                >
-                  Следваща
-                </a>
-              )}
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="py-12 text-center">
-          <p className="text-lg text-muted-foreground">
-            Все още няма публикувани статии в тази категория.
-          </p>
-        </div>
-      )}
+      <Suspense fallback={<CategoryArticlesSkeleton />}>
+        <CategoryArticles categoryId={category.id} categorySlug={categorySlug} page={page} />
+      </Suspense>
     </div>
   )
 }
