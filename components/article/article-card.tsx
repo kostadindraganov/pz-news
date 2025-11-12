@@ -14,7 +14,7 @@ interface ArticleCardProps {
     featured_image_url?: string | null
     featured_image_alt?: string | null
     published_at?: string | null
-    view_count: number
+    view_count?: number | null
     author?: {
       full_name: string
     } | null
@@ -66,7 +66,7 @@ export function ArticleCard({ article, featured = false }: ArticleCardProps) {
                 )}
                 <span className="flex items-center gap-1">
                   <Eye className="h-3 w-3" />
-                  {article.view_count}
+                  {article.view_count || 0}
                 </span>
               </div>
             </div>
@@ -109,7 +109,7 @@ export function ArticleCard({ article, featured = false }: ArticleCardProps) {
           )}
           <span className="flex items-center gap-1">
             <Eye className="h-3 w-3" />
-            {article.view_count}
+            {article.view_count || 0}
           </span>
         </CardFooter>
       </Card>

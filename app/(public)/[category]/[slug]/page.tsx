@@ -9,23 +9,18 @@ import { ArticleGrid } from '@/components/article/article-grid'
 import { Calendar, User, Eye, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-// Revalidate article pages every 60 seconds
-export const revalidate = 60
-
-// Enable dynamic params for articles not generated at build time
-export const dynamicParams = true
-
 interface ArticlePageProps {
-  params: {
+  params: Promise<{
     category: string
     slug: string
-  }
+  }>
 }
 
 // Generate metadata for SEO
 export async function generateMetadata({ params }: ArticlePageProps): Promise<Metadata> {
   try {
-    const article = await getArticleBySlug(params.slug)
+    const { slug } = await params
+    const article = await getArticleBySlug(slug)
 
     return {
       title: article.meta_title || article.title,
@@ -73,16 +68,18 @@ export async function generateStaticParams() {
 
   if (!articles) return []
 
-  return articles.map((article) => ({
+  return articles.map((article: any) => ({
     category: article.category?.slug || '',
     slug: article.slug,
   }))
 }
 
 export default async function ArticlePage({ params }: ArticlePageProps) {
+  const { slug } = await params
+
   let article
   try {
-    article = await getArticleBySlug(params.slug)
+    article = await getArticleBySlug(slug)
   } catch (error) {
     notFound()
   }
@@ -90,7 +87,8 @@ export default async function ArticlePage({ params }: ArticlePageProps) {
   // Increment view count (fire and forget)
   supabase
     .from('articles')
-    .update({ view_count: article.view_count + 1 })
+    // @ts-ignore - Supabase types need regeneration
+    .update({ view_count: (article.view_count || 0) + 1 })
     .eq('id', article.id)
     .then()
 

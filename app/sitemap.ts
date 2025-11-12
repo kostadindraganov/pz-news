@@ -17,6 +17,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .select('slug, updated_at')
     .eq('is_active', true)
 
+  const categoriesList = (categories as any[]) || []
+  const articlesList = (articles as any[]) || []
+
   // Static pages
   const staticPages: MetadataRoute.Sitemap = [
     {
@@ -40,22 +43,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ]
 
   // Category pages
-  const categoryPages: MetadataRoute.Sitemap =
-    categories?.map((category) => ({
-      url: `${baseUrl}/${category.slug}`,
-      lastModified: new Date(category.updated_at),
-      changeFrequency: 'daily' as const,
-      priority: 0.8,
-    })) || []
+  const categoryPages: MetadataRoute.Sitemap = categoriesList.map((category: any) => ({
+    url: `${baseUrl}/${category.slug}`,
+    lastModified: new Date(category.updated_at),
+    changeFrequency: 'daily' as const,
+    priority: 0.8,
+  }))
 
   // Article pages
-  const articlePages: MetadataRoute.Sitemap =
-    articles?.map((article) => ({
-      url: `${baseUrl}/${article.category?.slug}/${article.slug}`,
-      lastModified: new Date(article.updated_at),
-      changeFrequency: 'weekly' as const,
-      priority: 0.7,
-    })) || []
+  const articlePages: MetadataRoute.Sitemap = articlesList.map((article: any) => ({
+    url: `${baseUrl}/${article.category?.slug}/${article.slug}`,
+    lastModified: new Date(article.updated_at),
+    changeFrequency: 'weekly' as const,
+    priority: 0.7,
+  }))
 
   return [...staticPages, ...categoryPages, ...articlePages]
 }

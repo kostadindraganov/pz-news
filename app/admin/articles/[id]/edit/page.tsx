@@ -86,10 +86,9 @@ export default function EditArticlePage({ params }: { params: { id: string } }) 
           excerpt: article.excerpt || '',
           content: article.content,
           categoryId: article.category_id,
-          status: article.status,
+          status: article.status as 'draft' | 'published' | 'archived',
           isFeatured: article.is_featured,
           isBreaking: article.is_breaking,
-          featuredImageId: article.featured_image_id,
         })
 
         if (article.featured_image) {
@@ -143,7 +142,7 @@ export default function EditArticlePage({ params }: { params: { id: string } }) 
 
       const data = await response.json()
       setSelectedImage(data.media)
-      setValue('featuredImageId', data.media.id)
+      setValue('featuredImageUrl', data.media.public_url)
       toast.success('Image uploaded successfully')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to upload image')
@@ -154,7 +153,7 @@ export default function EditArticlePage({ params }: { params: { id: string } }) 
 
   const removeImage = () => {
     setSelectedImage(null)
-    setValue('featuredImageId', undefined)
+    setValue('featuredImageUrl', undefined)
   }
 
   const onSubmit = async (data: ArticleFormData) => {

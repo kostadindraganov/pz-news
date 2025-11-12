@@ -115,7 +115,7 @@ async function TrendingArticles() {
               {article.title}
             </a>
             <p className="mt-1 text-xs text-muted-foreground">
-              {article.view_count} прегледа
+              {article.view_count || 0} прегледа
             </p>
           </div>
         </div>

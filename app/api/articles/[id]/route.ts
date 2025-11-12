@@ -8,10 +8,11 @@ import {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const result = await getArticleById(params.id)
+    const { id } = await params
+    const result = await getArticleById(id)
 
     if (!result.success) {
       return NextResponse.json(
@@ -32,9 +33,11 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+
     // Check authentication
     const session = await auth.api.getSession({
       headers: request.headers,
@@ -52,7 +55,7 @@ export async function PATCH(
 
     // Update article
     const result = await updateArticle(
-      { id: params.id, ...body },
+      { id, ...body },
       session.user.id
     )
 
@@ -75,9 +78,11 @@ export async function PATCH(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
+
     // Check authentication
     const session = await auth.api.getSession({
       headers: request.headers,
@@ -91,7 +96,7 @@ export async function DELETE(
     }
 
     // Delete article
-    const result = await deleteArticle(params.id, session.user.id)
+    const result = await deleteArticle(id, session.user.id)
 
     if (!result.success) {
       return NextResponse.json(

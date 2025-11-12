@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
     // Save to database
     const { data: mediaRecord, error: dbError } = await supabaseAdmin
       .from('media')
+      // @ts-ignore - Supabase types need regeneration
       .insert({
         file_name: fileName,
         file_path: fileKey,
@@ -207,6 +208,7 @@ export async function PUT(request: NextRequest) {
         // Save to database
         const { data: mediaRecord } = await supabaseAdmin
           .from('media')
+          // @ts-ignore - Supabase types need regeneration
           .insert({
             file_name: fileName,
             file_path: fileKey,
