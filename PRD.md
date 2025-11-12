@@ -32,7 +32,7 @@ A modern, performant news website built with Next.js that replicates the structu
 
 | Technology | Purpose | Version |
 |-----------|---------|---------|
-| **Next.js 15** | React framework with App Router | Latest |
+| **Next.js 16** | React framework with App Router & Advanced Caching | Latest (RC/Canary) |
 | **TypeScript** | Type-safe development | 5.x |
 | **React 19** | UI library | Latest |
 | **Supabase** | Database & backend services | Latest |
@@ -516,9 +516,457 @@ CREATE POLICY "Admins have full access"
 
 ---
 
-## 6. Zod Validation Schemas
+## 6. Next.js 16 Caching & Performance Strategies
 
-### 6.1 Article Schema
+### 6.1 Next.js 16 Caching Layers
+
+Next.js 16 provides four primary caching mechanisms that we'll leverage:
+
+#### 6.1.1 Request Memoization (Automatic)
+- **What**: Deduplicates identical fetch requests during a single render pass
+- **Scope**: Single server request lifecycle
+- **Implementation**: Automatic (no configuration needed)
+- **Use Case**: Multiple components fetching the same data
+
+```typescript
+// Multiple calls to this function in the same render tree will only execute once
+async function getArticle(id: string) {
+  const res = await fetch(`${API_URL}/articles/${id}`)
+  return res.json()
+}
+```
+
+#### 6.1.2 Data Cache (Persistent, Server-Side)
+- **What**: Caches fetch responses across requests and deployments
+- **Duration**: Persistent until revalidation or redeploy
+- **Configuration**: Per-request or route-level
+
+**Implementation Strategies:**
+
+```typescript
+// app/[category]/[slug]/page.tsx - Article Page
+export default async function ArticlePage({ params }: { params: { slug: string } }) {
+  // Cache article data for 60 seconds, then revalidate in background
+  const article = await fetch(`${API_URL}/articles/${params.slug}`, {
+    next: { revalidate: 60 } // ISR: 60 second stale-while-revalidate
+  }).then(res => res.json())
+
+  return <ArticleContent article={article} />
+}
+
+// app/[category]/page.tsx - Category Page
+export default async function CategoryPage({ params }: { params: { category: string } }) {
+  // Cache category articles for 5 minutes
+  const articles = await fetch(`${API_URL}/articles?category=${params.category}`, {
+    next: {
+      revalidate: 300, // 5 minutes
+      tags: ['articles', `category-${params.category}`]
+    }
+  }).then(res => res.json())
+
+  return <ArticleGrid articles={articles} />
+}
+
+// app/page.tsx - Homepage
+export default async function HomePage() {
+  // Cache homepage data for 30 seconds
+  const [featured, latest, trending] = await Promise.all([
+    fetch(`${API_URL}/articles/featured`, {
+      next: { revalidate: 30, tags: ['featured-articles'] }
+    }).then(res => res.json()),
+
+    fetch(`${API_URL}/articles/latest`, {
+      next: { revalidate: 30, tags: ['latest-articles'] }
+    }).then(res => res.json()),
+
+    fetch(`${API_URL}/articles/trending`, {
+      next: { revalidate: 120, tags: ['trending-articles'] } // 2 minutes
+    }).then(res => res.json())
+  ])
+
+  return <Homepage featured={featured} latest={latest} trending={trending} />
+}
+```
+
+**On-Demand Revalidation:**
+
+```typescript
+// app/api/revalidate/route.ts
+import { revalidateTag, revalidatePath } from 'next/cache'
+import { NextRequest, NextResponse } from 'next/server'
+
+export async function POST(request: NextRequest) {
+  const { tags, paths } = await request.json()
+
+  // Revalidate by tag
+  if (tags) {
+    for (const tag of tags) {
+      revalidateTag(tag)
+    }
+  }
+
+  // Revalidate by path
+  if (paths) {
+    for (const path of paths) {
+      revalidatePath(path)
+    }
+  }
+
+  return NextResponse.json({ revalidated: true, now: Date.now() })
+}
+
+// server/services/article-service.ts
+export async function publishArticle(articleId: string) {
+  // Publish the article in database
+  await supabase
+    .from('articles')
+    .update({ status: 'published', published_at: new Date() })
+    .eq('id', articleId)
+
+  // Revalidate relevant caches
+  await fetch('/api/revalidate', {
+    method: 'POST',
+    body: JSON.stringify({
+      tags: ['articles', 'featured-articles', 'latest-articles'],
+      paths: ['/', '/pazardzhik']
+    })
+  })
+}
+```
+
+#### 6.1.3 Full Route Cache (Static Optimization)
+- **What**: Caches the entire rendered route (HTML + RSC payload)
+- **When**: Static routes at build time, dynamic routes after first request
+- **Control**: Via route segment config
+
+```typescript
+// app/[category]/page.tsx
+export const dynamic = 'force-static' // Default: 'auto'
+export const revalidate = 3600 // 1 hour ISR
+
+// Pre-render all category pages at build time
+export async function generateStaticParams() {
+  const categories = await fetch(`${API_URL}/categories`).then(res => res.json())
+
+  return categories.map((category: any) => ({
+    category: category.slug
+  }))
+}
+
+export default async function CategoryPage({ params }: { params: { category: string } }) {
+  // This page will be statically generated at build time
+  const articles = await getArticlesByCategory(params.category)
+  return <ArticleGrid articles={articles} />
+}
+```
+
+#### 6.1.4 Router Cache (Client-Side)
+- **What**: In-memory client cache for visited routes
+- **Duration**: Session-based or time-based
+- **Configuration**: Automatic, but can be bypassed
+
+```typescript
+// Force refresh on navigation (bypass router cache)
+import { useRouter } from 'next/navigation'
+
+export function RefreshButton() {
+  const router = useRouter()
+
+  return (
+    <button onClick={() => router.refresh()}>
+      Refresh
+    </button>
+  )
+}
+```
+
+### 6.2 Caching Strategy by Route Type
+
+| Route | Rendering Strategy | Cache Duration | Revalidation Strategy |
+|-------|-------------------|----------------|----------------------|
+| **Homepage (/)** | ISR | 30 seconds | Time-based + On-demand |
+| **Article Page** | ISR | 60 seconds | Time-based + On-demand on publish/edit |
+| **Category Page** | Static + ISR | 5 minutes | Time-based + On-demand |
+| **Search Results** | Dynamic | No cache | N/A |
+| **Admin Pages** | Dynamic | No cache | N/A |
+| **API Routes** | Dynamic | Custom | Per endpoint |
+
+### 6.3 Partial Prerendering (PPR) - Experimental
+
+Next.js 16 introduces Partial Prerendering, combining static and dynamic content:
+
+```typescript
+// next.config.js
+module.exports = {
+  experimental: {
+    ppr: true, // Enable Partial Prerendering
+  },
+}
+
+// app/[category]/[slug]/page.tsx
+import { Suspense } from 'react'
+
+export default async function ArticlePage({ params }: { params: { slug: string } }) {
+  // Static shell (cached)
+  const article = await getArticle(params.slug)
+
+  return (
+    <article>
+      <h1>{article.title}</h1>
+      <div>{article.content}</div>
+
+      {/* Dynamic content (not cached) */}
+      <Suspense fallback={<div>Loading comments...</div>}>
+        <Comments articleId={article.id} />
+      </Suspense>
+
+      {/* Dynamic view counter */}
+      <Suspense fallback={<div>Views: ...</div>}>
+        <ViewCounter articleId={article.id} />
+      </Suspense>
+    </article>
+  )
+}
+```
+
+### 6.4 Database Query Caching with React Cache
+
+```typescript
+// lib/cache.ts
+import { cache } from 'react'
+import { supabase } from '@/lib/supabase/client'
+
+// Deduplicate database queries within a single request
+export const getArticleById = cache(async (id: string) => {
+  const { data, error } = await supabase
+    .from('articles')
+    .select('*, author:users(*), category:categories(*)')
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+  return data
+})
+
+export const getCategoryBySlug = cache(async (slug: string) => {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('slug', slug)
+    .single()
+
+  if (error) throw error
+  return data
+})
+
+// These functions will only execute once per request, even if called multiple times
+```
+
+### 6.5 Unstable_cache for Advanced Caching
+
+```typescript
+// lib/cache.ts
+import { unstable_cache } from 'next/cache'
+import { supabase } from '@/lib/supabase/client'
+
+// Cache expensive database queries with custom TTL
+export const getTrendingArticles = unstable_cache(
+  async (limit: number = 10) => {
+    const { data } = await supabase
+      .from('articles')
+      .select('*')
+      .eq('status', 'published')
+      .order('view_count', { ascending: false })
+      .limit(limit)
+
+    return data
+  },
+  ['trending-articles'], // Cache key
+  {
+    revalidate: 120, // 2 minutes
+    tags: ['trending-articles'] // For on-demand revalidation
+  }
+)
+
+export const getCategoryArticleCount = unstable_cache(
+  async (categoryId: string) => {
+    const { count } = await supabase
+      .from('articles')
+      .select('*', { count: 'exact', head: true })
+      .eq('category_id', categoryId)
+      .eq('status', 'published')
+
+    return count
+  },
+  ['category-article-count'], // Base cache key
+  {
+    revalidate: 3600, // 1 hour
+    tags: ['articles', 'categories']
+  }
+)
+```
+
+### 6.6 Image Optimization with Next.js 16
+
+```typescript
+// components/optimized-image.tsx
+import Image from 'next/image'
+
+export function OptimizedArticleImage({
+  src,
+  alt,
+  priority = false
+}: {
+  src: string
+  alt: string
+  priority?: boolean
+}) {
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={1920}
+      height={1080}
+      quality={85}
+      priority={priority} // For above-the-fold images
+      placeholder="blur"
+      blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRg..." // Generate with sharp
+      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 1200px"
+      loading={priority ? 'eager' : 'lazy'}
+    />
+  )
+}
+```
+
+### 6.7 Route Segment Config for Performance
+
+```typescript
+// app/[category]/[slug]/page.tsx
+// Static optimization configuration
+export const dynamic = 'auto' // 'auto' | 'force-dynamic' | 'force-static'
+export const revalidate = 60 // Revalidate every 60 seconds
+export const fetchCache = 'default-cache' // 'auto' | 'default-cache' | 'only-cache' | 'force-cache'
+export const dynamicParams = true // Allow dynamic params not generated by generateStaticParams
+export const runtime = 'nodejs' // 'nodejs' | 'edge'
+
+// Admin pages - Always dynamic
+// app/admin/layout.tsx
+export const dynamic = 'force-dynamic' // Never cache admin pages
+export const revalidate = 0 // Disable caching
+```
+
+### 6.8 Streaming with Suspense Boundaries
+
+```typescript
+// app/page.tsx - Homepage with Streaming
+import { Suspense } from 'react'
+
+export default function HomePage() {
+  return (
+    <div>
+      {/* Static hero - renders immediately */}
+      <Hero />
+
+      {/* Stream in featured articles */}
+      <Suspense fallback={<ArticleGridSkeleton />}>
+        <FeaturedArticles />
+      </Suspense>
+
+      {/* Stream in latest articles */}
+      <Suspense fallback={<ArticleGridSkeleton />}>
+        <LatestArticles />
+      </Suspense>
+
+      {/* Stream in regional news */}
+      <Suspense fallback={<RegionalNewsSkeleton />}>
+        <RegionalNews />
+      </Suspense>
+    </div>
+  )
+}
+
+// Each component fetches its own data
+async function FeaturedArticles() {
+  const articles = await getFeaturedArticles()
+  return <ArticleGrid articles={articles} />
+}
+
+async function LatestArticles() {
+  const articles = await getLatestArticles()
+  return <ArticleGrid articles={articles} />
+}
+```
+
+### 6.9 CDN Caching Headers
+
+```typescript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, s-maxage=60, stale-while-revalidate=300' }
+        ]
+      },
+      {
+        source: '/_next/image/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }
+        ]
+      },
+      {
+        source: '/:category/:slug',
+        headers: [
+          { key: 'Cache-Control', value: 'public, s-maxage=60, stale-while-revalidate=300' }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 6.10 oRPC with Caching
+
+```typescript
+// server/routers/articles.ts with caching
+import { unstable_cache } from 'next/cache'
+
+export const articlesRouter = createRouter({
+  getArticles: {
+    input: z.object({
+      categoryId: z.string().uuid().optional(),
+      limit: z.number().min(1).max(100).default(10),
+    }),
+    async resolve({ input }) {
+      // Wrap database query in cache
+      return unstable_cache(
+        async () => {
+          const { data } = await supabase
+            .from('articles')
+            .select('*')
+            .eq('category_id', input.categoryId)
+            .limit(input.limit)
+
+          return data
+        },
+        [`articles-${input.categoryId}-${input.limit}`],
+        {
+          revalidate: 60,
+          tags: ['articles', `category-${input.categoryId}`]
+        }
+      )()
+    }
+  }
+})
+```
+
+---
+
+## 7. Zod Validation Schemas
+
+### 7.1 Article Schema
 
 ```typescript
 import { z } from 'zod';
@@ -549,7 +997,7 @@ export const articleSchema = z.object({
 export type ArticleInput = z.infer<typeof articleSchema>;
 ```
 
-### 6.2 Category Schema
+### 7.2 Category Schema
 
 ```typescript
 export const categorySchema = z.object({
@@ -563,7 +1011,7 @@ export const categorySchema = z.object({
 });
 ```
 
-### 6.3 User Schema
+### 7.3 User Schema
 
 ```typescript
 export const userCreateSchema = z.object({
@@ -578,9 +1026,9 @@ export const userUpdateSchema = userCreateSchema.partial().omit({ password: true
 
 ---
 
-## 7. Authentication with better-auth
+## 8. Authentication with better-auth
 
-### 7.1 Configuration
+### 8.1 Configuration
 
 ```typescript
 // lib/auth/config.ts
@@ -603,7 +1051,7 @@ export const auth = betterAuth({
 });
 ```
 
-### 7.2 Middleware Protection
+### 8.2 Middleware Protection
 
 ```typescript
 // middleware.ts
@@ -633,9 +1081,9 @@ export const config = {
 
 ---
 
-## 8. Image Upload to Cloudflare R2
+## 9. Image Upload to Cloudflare R2
 
-### 8.1 R2 Client Setup
+### 9.1 R2 Client Setup
 
 ```typescript
 // lib/r2/client.ts
@@ -651,7 +1099,7 @@ export const r2Client = new S3Client({
 });
 ```
 
-### 8.2 Upload API Route
+### 9.2 Upload API Route
 
 ```typescript
 // app/api/upload/route.ts
@@ -700,9 +1148,9 @@ export async function POST(request: NextRequest) {
 
 ---
 
-## 9. oRPC Implementation
+## 10. oRPC Implementation
 
-### 9.1 Article Router
+### 10.1 Article Router
 
 ```typescript
 // server/routers/articles.ts
@@ -765,9 +1213,9 @@ export const articlesRouter = createRouter({
 
 ---
 
-## 10. User Stories
+## 11. User Stories
 
-### 10.1 Public User Stories
+### 11.1 Public User Stories
 
 1. **As a visitor**, I want to view the latest news articles on the homepage, so I can stay informed about local events.
 2. **As a visitor**, I want to browse articles by category, so I can find news relevant to my interests.
@@ -775,7 +1223,7 @@ export const articlesRouter = createRouter({
 4. **As a visitor**, I want to search for articles, so I can find specific news.
 5. **As a visitor**, I want to view articles from my specific region, so I can stay updated on local matters.
 
-### 10.2 Admin User Stories
+### 11.2 Admin User Stories
 
 1. **As an admin**, I want to create new articles with rich text content, so I can publish news.
 2. **As an admin**, I want to upload images to accompany articles, so I can make content more engaging.
@@ -788,9 +1236,9 @@ export const articlesRouter = createRouter({
 
 ---
 
-## 11. SEO Requirements
+## 12. SEO Requirements
 
-### 11.1 On-Page SEO
+### 12.1 On-Page SEO
 
 - Dynamic meta titles and descriptions for each article
 - Open Graph tags for social sharing
@@ -801,7 +1249,7 @@ export const articlesRouter = createRouter({
   - Author schema
   - Organization schema
 
-### 11.2 Technical SEO
+### 12.2 Technical SEO
 
 - Sitemap generation (`/sitemap.xml`)
 - Robots.txt configuration
@@ -811,7 +1259,7 @@ export const articlesRouter = createRouter({
 - Mobile-friendly responsive design
 - HTTPS only
 
-### 11.3 URL Structure
+### 12.3 URL Structure
 
 - Homepage: `/`
 - Category: `/[category-slug]`
@@ -821,31 +1269,54 @@ export const articlesRouter = createRouter({
 
 ---
 
-## 12. Performance Requirements
+## 13. Performance Requirements
 
-### 12.1 Loading Performance
+### 13.1 Loading Performance
 
 - First Contentful Paint (FCP): < 1.8s
 - Largest Contentful Paint (LCP): < 2.5s
 - Time to Interactive (TTI): < 3.5s
 - Cumulative Layout Shift (CLS): < 0.1
 
-### 12.2 Optimization Strategies
+### 13.2 Next.js 16 Performance Optimization Strategies
 
-- **Next.js Image Optimization**: Use `next/image` for all images
-- **Static Generation**: Pre-render category pages at build time
+#### Core Optimizations
+- **Next.js Image Optimization**: Use `next/image` for all images with automatic WebP/AVIF conversion
+- **Static Generation**: Pre-render category pages at build time using `generateStaticParams`
 - **Incremental Static Regeneration (ISR)**: Revalidate article pages every 60 seconds
 - **Code Splitting**: Automatic with Next.js App Router
-- **Lazy Loading**: Images and below-the-fold content
-- **CDN**: Cloudflare R2 for image delivery
-- **Database Indexing**: Index frequently queried columns
-- **Caching**: Implement caching strategies for API responses
+- **Lazy Loading**: Images and below-the-fold content with `loading="lazy"`
+- **CDN**: Cloudflare R2 for image delivery with immutable caching
+- **Database Indexing**: Index frequently queried columns (category_id, published_at, slug)
+
+#### Next.js 16 Specific Optimizations
+- **Partial Prerendering (PPR)**: Mix static shell with dynamic content using Suspense
+- **React Cache**: Deduplicate database queries within a single request
+- **unstable_cache**: Cache expensive operations across requests
+- **Streaming with Suspense**: Progressive rendering for faster TTFB
+- **Route Segment Config**: Fine-grained control over caching behavior per route
+- **Request Memoization**: Automatic deduplication of fetch requests
+- **Full Route Cache**: Cache entire rendered routes (HTML + RSC payload)
+- **On-Demand Revalidation**: Instant cache updates via `revalidateTag`/`revalidatePath`
+
+#### Advanced Techniques
+- **Server Components by Default**: Reduce JavaScript bundle size
+- **Client Components Only When Needed**: Use `'use client'` sparingly for interactivity
+- **Font Optimization**: Use `next/font` for automatic font optimization and zero layout shift
+- **Script Optimization**: Use `next/script` with appropriate loading strategies
+- **Bundle Analysis**: Regular analysis with `@next/bundle-analyzer`
+- **Tree Shaking**: Ensure all imports are tree-shakeable
+- **Dynamic Imports**: Code-split heavy components with `next/dynamic`
+- **Prefetching**: Automatic link prefetching for faster navigation
+- **Compression**: Enable gzip/brotli compression at CDN level
+- **HTTP/2 Server Push**: Enable at deployment platform (Vercel)
+- **Edge Runtime**: Use Edge Runtime for API routes when possible for lower latency
 
 ---
 
-## 13. Security Requirements
+## 14. Security Requirements
 
-### 13.1 Authentication & Authorization
+### 14.1 Authentication & Authorization
 
 - Secure password hashing (handled by better-auth)
 - Session-based authentication
@@ -853,7 +1324,7 @@ export const articlesRouter = createRouter({
 - Admin-only routes protected by middleware
 - First user automatically becomes admin
 
-### 13.2 Data Protection
+### 14.2 Data Protection
 
 - SQL injection prevention (Supabase/Parameterized queries)
 - XSS protection (React automatic escaping)
@@ -862,7 +1333,7 @@ export const articlesRouter = createRouter({
 - HTTPS enforcement
 - Secure cookie settings (httpOnly, secure, sameSite)
 
-### 13.3 Input Validation
+### 14.3 Input Validation
 
 - Zod validation on all user inputs
 - File upload validation:
@@ -872,7 +1343,7 @@ export const articlesRouter = createRouter({
 - Rate limiting on API routes
 - Sanitize user-generated content
 
-### 13.4 Supabase Security
+### 14.4 Supabase Security
 
 - Row Level Security (RLS) enabled on all tables
 - Service role key kept server-side only
@@ -881,9 +1352,9 @@ export const articlesRouter = createRouter({
 
 ---
 
-## 14. Responsive Design Requirements
+## 15. Responsive Design Requirements
 
-### 14.1 Breakpoints
+### 15.1 Breakpoints
 
 ```css
 /* Tailwind default breakpoints */
@@ -894,7 +1365,7 @@ xl: 1280px  /* Desktops */
 2xl: 1536px /* Large desktops */
 ```
 
-### 14.2 Mobile-First Design
+### 15.2 Mobile-First Design
 
 - Touch-friendly interface (min 44x44px touch targets)
 - Hamburger menu for mobile navigation
@@ -904,10 +1375,10 @@ xl: 1280px  /* Desktops */
 
 ---
 
-## 15. Development Phases
+## 16. Development Phases
 
 ### Phase 1: Foundation (Week 1-2)
-- [ ] Project setup with Next.js 15, TypeScript, Tailwind
+- [ ] Project setup with Next.js 16, TypeScript, Tailwind
 - [ ] Install and configure all dependencies
 - [ ] Supabase project setup
 - [ ] Database schema creation
@@ -979,7 +1450,7 @@ xl: 1280px  /* Desktops */
 
 ---
 
-## 16. Environment Variables
+## 17. Environment Variables
 
 ```bash
 # .env.local
@@ -1009,19 +1480,19 @@ ORPC_ENDPOINT=/api/orpc
 
 ---
 
-## 17. Testing Strategy
+## 18. Testing Strategy
 
-### 17.1 Unit Tests
+### 18.1 Unit Tests
 - Validation schemas (Zod)
 - Utility functions
 - Service layer functions
 
-### 17.2 Integration Tests
+### 18.2 Integration Tests
 - API routes
 - oRPC endpoints
 - Database operations
 
-### 17.3 E2E Tests
+### 18.3 E2E Tests
 - User login flow
 - Article creation flow
 - Image upload flow
@@ -1029,14 +1500,14 @@ ORPC_ENDPOINT=/api/orpc
 
 ---
 
-## 18. Monitoring & Analytics
+## 19. Monitoring & Analytics
 
-### 18.1 Performance Monitoring
+### 19.1 Performance Monitoring
 - Vercel Analytics
 - Web Vitals tracking
 - Error tracking (Sentry)
 
-### 18.2 User Analytics
+### 19.2 User Analytics
 - Google Analytics 4
 - Page view tracking
 - Article view tracking
@@ -1044,7 +1515,7 @@ ORPC_ENDPOINT=/api/orpc
 
 ---
 
-## 19. Future Enhancements (Post-MVP)
+## 20. Future Enhancements (Post-MVP)
 
 - [ ] Email notifications for new articles (newsletter)
 - [ ] Comment system for articles
@@ -1064,15 +1535,15 @@ ORPC_ENDPOINT=/api/orpc
 
 ---
 
-## 20. Success Metrics
+## 21. Success Metrics
 
-### 20.1 Technical Metrics
+### 21.1 Technical Metrics
 - Page load time < 3 seconds
 - Lighthouse score > 90
 - Zero critical security vulnerabilities
 - 99.9% uptime
 
-### 20.2 Business Metrics
+### 21.2 Business Metrics
 - Number of published articles per month
 - User engagement (time on site, pages per session)
 - Article view count
@@ -1081,7 +1552,7 @@ ORPC_ENDPOINT=/api/orpc
 
 ---
 
-## 21. Risks & Mitigations
+## 22. Risks & Mitigations
 
 | Risk | Impact | Probability | Mitigation |
 |------|--------|-------------|------------|
@@ -1093,14 +1564,14 @@ ORPC_ENDPOINT=/api/orpc
 
 ---
 
-## 22. Support & Maintenance
+## 23. Support & Maintenance
 
-### 22.1 Documentation
+### 23.1 Documentation
 - Technical documentation for developers
 - User guide for admin panel
 - API documentation (oRPC endpoints)
 
-### 22.2 Ongoing Tasks
+### 23.2 Ongoing Tasks
 - Weekly database backups
 - Monthly security updates
 - Quarterly feature reviews
@@ -1108,7 +1579,7 @@ ORPC_ENDPOINT=/api/orpc
 
 ---
 
-## 23. Stakeholder Sign-off
+## 24. Stakeholder Sign-off
 
 - [ ] Technical Lead
 - [ ] Project Manager
@@ -1122,6 +1593,7 @@ ORPC_ENDPOINT=/api/orpc
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2025-11-12 | Claude | Initial PRD creation |
+| 1.1 | 2025-11-12 | Claude | Updated to Next.js 16 with comprehensive caching & performance strategies |
 
 ---
 
