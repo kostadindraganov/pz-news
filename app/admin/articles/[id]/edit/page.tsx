@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { RichTextEditor } from '@/components/admin/rich-text-editor'
-import { ArrowLeft, Save, Upload, X } from 'lucide-react'
+import { DeleteDialog } from '@/components/admin/delete-dialog'
+import { ArrowLeft, Save, Upload, X, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { articleSchema } from '@/lib/validations/article'
@@ -32,29 +33,80 @@ interface MediaFile {
   file_name: string
 }
 
-export default function NewArticlePage() {
+interface Article {
+  id: string
+  title: string
+  subtitle?: string
+  excerpt?: string
+  content: string
+  category_id: string
+  status: string
+  is_featured: boolean
+  is_breaking: boolean
+  featured_image_id?: string
+  featured_image?: MediaFile
+}
+
+export default function EditArticlePage({ params }: { params: { id: string } }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [fetchingArticle, setFetchingArticle] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
   const [uploading, setUploading] = useState(false)
   const [selectedImage, setSelectedImage] = useState<MediaFile | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const {
     register,
     handleSubmit,
     control,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<ArticleFormData>({
     resolver: zodResolver(articleSchema),
-    defaultValues: {
-      status: 'draft',
-      isFeatured: false,
-      isBreaking: false,
-    },
   })
 
-  // Fetch categories on mount
+  // Fetch article data
+  useEffect(() => {
+    const fetchArticle = async () => {
+      try {
+        const response = await fetch(`/api/articles/${params.id}`)
+        if (!response.ok) {
+          throw new Error('Article not found')
+        }
+
+        const article: Article = await response.json()
+
+        // Populate form with article data
+        reset({
+          title: article.title,
+          subtitle: article.subtitle || '',
+          excerpt: article.excerpt || '',
+          content: article.content,
+          categoryId: article.category_id,
+          status: article.status,
+          isFeatured: article.is_featured,
+          isBreaking: article.is_breaking,
+          featuredImageId: article.featured_image_id,
+        })
+
+        if (article.featured_image) {
+          setSelectedImage(article.featured_image)
+        }
+      } catch (error) {
+        toast.error('Failed to load article')
+        router.push('/admin/articles')
+      } finally {
+        setFetchingArticle(false)
+      }
+    }
+
+    fetchArticle()
+  }, [params.id, reset, router])
+
+  // Fetch categories
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -109,8 +161,8 @@ export default function NewArticlePage() {
     setLoading(true)
 
     try {
-      const response = await fetch('/api/articles', {
-        method: 'POST',
+      const response = await fetch(`/api/articles/${params.id}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -119,32 +171,75 @@ export default function NewArticlePage() {
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || 'Failed to create article')
+        throw new Error(error.error || 'Failed to update article')
       }
 
-      toast.success('Article created successfully')
+      toast.success('Article updated successfully')
       router.push('/admin/articles')
       router.refresh()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create article')
+      toast.error(error instanceof Error ? error.message : 'Failed to update article')
     } finally {
       setLoading(false)
     }
   }
 
+  const handleDelete = async () => {
+    setDeleting(true)
+
+    try {
+      const response = await fetch(`/api/articles/${params.id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete article')
+      }
+
+      toast.success('Article deleted successfully')
+      router.push('/admin/articles')
+      router.refresh()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to delete article')
+      setDeleting(false)
+      setDeleteDialogOpen(false)
+    }
+  }
+
+  if (fetchingArticle) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading article...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/admin/articles">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-3xl font-bold">New Article</h1>
-          <p className="text-muted-foreground">Create a new news article</p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/admin/articles">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold">Edit Article</h1>
+            <p className="text-muted-foreground">Update article details</p>
+          </div>
         </div>
+        <Button
+          variant="destructive"
+          onClick={() => setDeleteDialogOpen(true)}
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete Article
+        </Button>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -273,7 +368,7 @@ export default function NewArticlePage() {
                 <div className="space-y-2">
                   <Button type="submit" className="w-full" disabled={loading}>
                     <Save className="mr-2 h-4 w-4" />
-                    {loading ? 'Saving...' : 'Save Article'}
+                    {loading ? 'Saving...' : 'Update Article'}
                   </Button>
                   <Link href="/admin/articles" className="block">
                     <Button type="button" variant="outline" className="w-full">
@@ -360,6 +455,16 @@ export default function NewArticlePage() {
           </div>
         </div>
       </form>
+
+      {/* Delete Confirmation Dialog */}
+      <DeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={handleDelete}
+        loading={deleting}
+        title="Delete Article"
+        description="Are you sure you want to delete this article? This action cannot be undone."
+      />
     </div>
   )
 }

@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Enable Partial Prerendering via cacheComponents
-  cacheComponents: true,
-
   experimental: {
     // Enable server actions
     serverActions: {
