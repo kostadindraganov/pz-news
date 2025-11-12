@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
+    // Enable Partial Prerendering for mixing static and dynamic content
+    cacheComponents: true,
     // Enable server actions
     serverActions: {
       bodySizeLimit: '10mb',
