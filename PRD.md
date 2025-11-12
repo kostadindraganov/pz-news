@@ -1051,15 +1051,15 @@ export const auth = betterAuth({
 });
 ```
 
-### 8.2 Middleware Protection
+### 8.2 Proxy Protection
 
 ```typescript
-// middleware.ts
+// proxy.ts
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth/config';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const session = await auth.api.getSession({
     headers: request.headers,
   });
